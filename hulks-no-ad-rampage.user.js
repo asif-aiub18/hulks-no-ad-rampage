@@ -1,43 +1,26 @@
-// ==UserScript==
-// @name         Hulk’s No-Ad Rampage for YT
-// @namespace    http://tampermonkey.net/
-// @version      1.0
-// @description  Hulk-style YouTube ad blocker with themes, mute during ads, reload & resume, SponsorBlock skip, and a draggable Hulk-themed control panel below the video
-// @author       HulkBhai
-// @match        https://www.youtube.com/watch*
-// @match        https://www.youtube.com/*
-// @match        https://www.youtube.com/embed/*
-// @match        https://www.youtube-nocookie.com/embed/*
-// @match        https://www.youtube.com/live_chat*
-// @match        https://www.youtube.com/live_chat_replay*
-// @match        https://music.youtube.com/*
-// @grant        GM_xmlhttpRequest
-// @connect      sponsor.ajay.app
+// @name          Hulk’s No-Ad Rampage for YT
+// @namespace     http://tampermonkey.net/
+// @version       459
+// @description   Ad skip & mute toggles docked below YouTube player, resizable strap shape, synced theme, saves width, SponsorBlock skip, reload & resume
+// @author        HulkBhai
+// @match         https://www.youtube.com/watch*
+// @match         https://www.youtube.com/*
+// @match         https://www.youtube.com/embed/*
+// @match         https://www.youtube-nocookie.com/embed/*
+// @match         https://www.youtube.com/live_chat*
+// @match         https://www.youtube.com/live_chat_replay*
+// @match         https://music.youtube.com/*
+// @grant         GM_xmlhttpRequest
+// @connect       sponsor.ajay.app
 // ==/UserScript==
 
 (function () {
   'use strict';
 
-  // Settings & State
   const SETTINGS = {
     muteDuringAds: true,
     reloadOnAd: true,
     sponsorBlock: true,
-    theme: 'hulk',
-  };
-
-  const THEMES = {
-    hulk: { bg: '#3a6e37', color: '#a2d149', border: '#2e5b29', backdrop: false },
-    dark: { bg: '#1e1e1e', color: '#fff', border: '#444', backdrop: false },
-    light: { bg: '#ffffff', color: '#111', border: '#ccc', backdrop: false },
-    neon: { bg: '#0f0f0f', color: '#39ff14', border: '#0f0', backdrop: false },
-    retro: { bg: '#f4ecd8', color: '#5c3317', border: '#a0522d', backdrop: false },
-    glass: { bg: 'rgba(255,255,255,0.1)', color: '#fff', border: '#ccc', backdrop: true },
-    ocean: { bg: '#001f3f', color: '#7FDBFF', border: '#0074D9', backdrop: false },
-    sunset: { bg: '#FF5733', color: '#FFF', border: '#C70039', backdrop: false },
-    cyberpunk: { bg: '#0d0221', color: '#ff00c8', border: '#fffb00', backdrop: false },
-    forest: { bg: '#0b3d0b', color: '#8fbc8f', border: '#2e8b57', backdrop: false },
-    pastel: { bg: '#ffe0f0', color: '#8b008b', border: '#ff69b4', backdrop: false }
   };
 
   const MAX_RELOAD_ATTEMPTS = 5;
@@ -46,165 +29,166 @@
   let video = null;
   let sponsorSegments = [];
 
-  // Create draggable control panel below video
-  function createUI() {
-    if (document.getElementById('hulk-no-ad-panel')) return; // avoid duplicates
+  function loadSettings() {
+    const saved = localStorage.getItem('hulkAdHandlerSettings');
+    if (saved) {
+      try {
+        const loaded = JSON.parse(saved);
+        Object.assign(SETTINGS, loaded);
+      } catch { }
+    }
+  }
 
-    const container = document.createElement('div');
-    container.id = 'hulk-no-ad-panel';
-    container.style.position = 'absolute';
-    container.style.top = '100%';  // right below video container
-    container.style.left = '0';
-    container.style.zIndex = '99999';
-    container.style.padding = '10px 14px';
-    container.style.marginTop = '5px';
-    container.style.borderRadius = '12px';
-    container.style.fontSize = '14px';
-    container.style.userSelect = 'none';
-    container.style.cursor = 'move';
-    container.style.boxShadow = '0 4px 15px rgba(0,0,0,0.4)';
-    container.style.minWidth = '280px';
-    container.style.maxWidth = '350px';
-    container.style.fontFamily = "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
+  function saveSettings() {
+    localStorage.setItem('hulkAdHandlerSettings', JSON.stringify(SETTINGS));
+  }
 
-    // Hulk funny logo
-    const logo = document.createElement('div');
-    logo.innerHTML = `<span style="
-      font-weight: 900; 
-      font-size: 18px; 
-      color: #2ecc40; 
-      text-shadow: 0 0 8px #2ecc40, 0 0 15px #27ae60;">HULK'S <span style="color:#ff4136;">NO-AD</span> RAMPAGE 💥</span>`;
-    logo.style.textAlign = 'center';
-    logo.style.marginBottom = '10px';
-    container.appendChild(logo);
+  function savePanelWidth(width) {
+    localStorage.setItem('hulkPanelWidth', width);
+  }
 
-    // Toggle options
-    const options = [
-      { key: 'muteDuringAds', label: 'Mute During Ads' },
-      { key: 'reloadOnAd', label: 'Reload & Resume on Ad' },
-      { key: 'sponsorBlock', label: 'Skip Sponsors (SponsorBlock)' },
+  function loadPanelWidth() {
+    const w = localStorage.getItem('hulkPanelWidth');
+    return w ? w : '320px';
+  }
+
+  function applyTheme(panel) {
+    if (!panel) panel = document.getElementById('hulk-ad-handler-ui');
+    if (!panel) return;
+
+    const isDark = document.documentElement.getAttribute('dark') !== null ||
+      document.documentElement.classList.contains('dark') ||
+      document.body.classList.contains('dark');
+
+    if (isDark) {
+      panel.style.backgroundColor = '#202020';
+      panel.style.color = '#39ff14';
+      panel.style.border = '2px solid #39ff14';
+      panel.style.boxShadow = '0 0 6px rgba(57, 255, 20, 0.6)';
+    } else {
+      panel.style.backgroundColor = '#f0f0f0';
+      panel.style.color = '#222';
+      panel.style.border = '2px solid #666';
+      panel.style.boxShadow = '0 0 5px rgba(0,0,0,0.15)';
+    }
+  }
+
+  function observeThemeChanges() {
+    const observer = new MutationObserver(() => {
+      applyTheme();
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'dark'] });
+  }
+
+  function createPanel(playerContainer) {
+    const oldPanel = document.getElementById('hulk-ad-handler-ui');
+    if (oldPanel) oldPanel.remove();
+
+    const panel = document.createElement('div');
+    panel.id = 'hulk-ad-handler-ui';
+    panel.style.position = 'relative';
+    panel.style.marginTop = '6px';
+    panel.style.marginLeft = 'auto';
+    panel.style.backgroundColor = '#202020';
+    panel.style.color = '#39ff14';
+    panel.style.border = '2px solid #39ff14';
+    panel.style.borderRadius = '12px';
+    panel.style.padding = '8px 12px';
+    panel.style.fontFamily = "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif";
+    panel.style.fontSize = '14px';
+    panel.style.userSelect = 'none';
+    panel.style.cursor = 'default';
+    panel.style.maxWidth = 'calc(100vw - 40px)';
+    panel.style.width = loadPanelWidth();
+    panel.style.height = '44px';
+    panel.style.resize = 'horizontal';
+    panel.style.overflow = 'auto';
+    panel.style.display = 'flex';
+    panel.style.alignItems = 'center';
+    panel.style.gap = '12px';
+
+    const title = document.createElement('div');
+    title.textContent = '🎯 Ad Handler by Hulk';
+    title.style.fontWeight = 'bold';
+    title.style.whiteSpace = 'nowrap';
+    panel.appendChild(title);
+
+    const togglesContainer = document.createElement('div');
+    togglesContainer.style.display = 'flex';
+    togglesContainer.style.gap = '12px';
+    togglesContainer.style.flexWrap = 'nowrap';
+    togglesContainer.style.alignItems = 'center';
+    togglesContainer.style.justifyContent = 'flex-end';
+    togglesContainer.style.flexGrow = '1';
+
+    const toggles = [
+      { key: 'muteDuringAds', label: 'Mute during ads' },
+      { key: 'reloadOnAd', label: 'Reload & resume' },
+      { key: 'sponsorBlock', label: 'Skip sponsors' },
     ];
 
-    options.forEach(opt => {
-      const label = document.createElement('label');
-      label.style.display = 'block';
-      label.style.margin = '6px 0';
-      label.style.cursor = 'pointer';
+    toggles.forEach(({ key, label }) => {
+      const labelEl = document.createElement('label');
+      labelEl.style.cursor = 'pointer';
+      labelEl.style.whiteSpace = 'nowrap';
 
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
-      checkbox.checked = SETTINGS[opt.key];
-      checkbox.style.marginRight = '8px';
+      checkbox.checked = SETTINGS[key];
+      checkbox.style.marginRight = '6px';
+
       checkbox.addEventListener('change', () => {
-        SETTINGS[opt.key] = checkbox.checked;
+        SETTINGS[key] = checkbox.checked;
+        saveSettings();
+        if (key === 'sponsorBlock' && checkbox.checked) {
+          fetchSponsorSegments();
+        }
       });
 
-      label.appendChild(checkbox);
-      label.appendChild(document.createTextNode(opt.label));
-      container.appendChild(label);
+      labelEl.appendChild(checkbox);
+      labelEl.append(label);
+      togglesContainer.appendChild(labelEl);
     });
 
-    // Theme selector title
-    const themeTitle = document.createElement('div');
-    themeTitle.textContent = '🎨 Select Theme:';
-    themeTitle.style.marginTop = '12px';
-    themeTitle.style.marginBottom = '6px';
-    themeTitle.style.fontWeight = '600';
-    container.appendChild(themeTitle);
+    panel.appendChild(togglesContainer);
 
-    // Theme buttons container
-    const themeContainer = document.createElement('div');
-    themeContainer.style.display = 'flex';
-    themeContainer.style.flexWrap = 'wrap';
-    themeContainer.style.gap = '6px';
-
-    Object.keys(THEMES).forEach(theme => {
-      const btn = document.createElement('button');
-      btn.textContent = theme.charAt(0).toUpperCase() + theme.slice(1);
-      const t = THEMES[theme];
-      btn.style.background = t.bg;
-      btn.style.color = t.color;
-      btn.style.border = `2px solid ${t.border}`;
-      btn.style.borderRadius = '8px';
-      btn.style.padding = '6px 10px';
-      btn.style.cursor = 'pointer';
-      btn.style.flex = '1 1 30%';
-      btn.style.fontWeight = '700';
-      btn.addEventListener('click', () => applyTheme(theme));
-      themeContainer.appendChild(btn);
+    panel.addEventListener('mouseup', () => {
+      savePanelWidth(panel.style.width);
+    });
+    panel.addEventListener('touchend', () => {
+      savePanelWidth(panel.style.width);
     });
 
-    container.appendChild(themeContainer);
-
-    // Append to video player container (below video)
-    const videoContainer = document.querySelector('#player-container') || document.querySelector('.html5-video-player');
-    if (videoContainer) {
-      // For absolute positioning relative to container
-      videoContainer.style.position = 'relative';
-      videoContainer.appendChild(container);
-    } else {
-      document.body.appendChild(container);
-    }
-
-    makeDraggable(container);
-    applyTheme(SETTINGS.theme);
+    playerContainer.appendChild(panel);
+    applyTheme(panel);
   }
 
-  // Apply chosen theme to panel UI
-  function applyTheme(theme) {
-    SETTINGS.theme = theme;
-    const panel = document.getElementById('hulk-no-ad-panel');
-    if (!panel) return;
-    const t = THEMES[theme];
-    panel.style.background = t.bg;
-    panel.style.color = t.color;
-    panel.style.border = `2px solid ${t.border}`;
-    if (t.backdrop) {
-      panel.style.backdropFilter = 'blur(8px)';
-      panel.style.background = t.bg;
-    } else {
-      panel.style.backdropFilter = 'none';
-    }
-  }
+  function fetchSponsorSegments() {
+    if (!video) return;
+    const vid = getVideoId();
+    if (!vid) return;
 
-  // Make panel draggable
-  function makeDraggable(el) {
-    let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
-    el.onmousedown = function (e) {
-      e.preventDefault();
-      pos3 = e.clientX;
-      pos4 = e.clientY;
-      document.onmouseup = closeDrag;
-      document.onmousemove = drag;
-    };
-    function drag(e) {
-      e.preventDefault();
-      pos1 = pos3 - e.clientX;
-      pos2 = pos4 - e.clientY;
-      pos3 = e.clientX;
-      pos4 = e.clientY;
-      el.style.top = (el.offsetTop - pos2) + "px";
-      el.style.left = (el.offsetLeft - pos1) + "px";
-    }
-    function closeDrag() {
-      document.onmouseup = null;
-      document.onmousemove = null;
-    }
-  }
-
-  // SponsorBlock API call
-  async function fetchSponsorSegments(videoId) {
-    return new Promise((resolve, reject) => {
-      GM_xmlhttpRequest({
-        method: "GET",
-        url: `https://sponsor.ajay.app/api/skipSegments?videoID=${videoId}`,
-        onload: res => resolve(JSON.parse(res.responseText)),
-        onerror: err => reject(err),
-      });
+    GM_xmlhttpRequest({
+      method: "GET",
+      url: `https://sponsor.ajay.app/api/skipSegments?videoID=${vid}`,
+      onload: function (res) {
+        try {
+          sponsorSegments = JSON.parse(res.responseText);
+        } catch (e) {
+          sponsorSegments = [];
+        }
+      },
+      onerror: function () {
+        sponsorSegments = [];
+      }
     });
   }
 
-  // Skip sponsor segments if active
+  function getVideoId() {
+    const urlParams = new URLSearchParams(window.location.search);
+    return urlParams.get('v');
+  }
+
   function skipSponsorSegments() {
     if (!SETTINGS.sponsorBlock || !video || sponsorSegments.length === 0) return;
     const t = video.currentTime;
@@ -217,98 +201,98 @@
     }
   }
 
-  // Detect if ad is playing on YouTube
   function isAdPlaying() {
     return document.body.classList.contains('ad-showing');
   }
 
-  // Reload & resume video on ad detection
   function reloadAndResume() {
-    if (!SETTINGS.reloadOnAd) return;
+    if (!SETTINGS.reloadOnAd || !video) return;
     const time = video.currentTime;
-    sessionStorage.setItem('hulks_no_ad_resume_time', time);
+    sessionStorage.setItem('yt_resume_time', time);
     location.reload();
   }
 
-  // Fallback: back then forward navigation to try resuming video
-  function fallbackBackForward() {
-    const time = video.currentTime;
-    sessionStorage.setItem('hulks_no_ad_resume_time', time);
-    history.back();
-    setTimeout(() => history.forward(), 1500);
-  }
-
-  // Resume playback after reload or nav
   function resumePlayback() {
-    const resume = sessionStorage.getItem('hulks_no_ad_resume_time');
-    if (resume && video) {
+    if (!video) return;
+    const resume = sessionStorage.getItem('yt_resume_time');
+    if (resume) {
       video.currentTime = parseFloat(resume);
-      sessionStorage.removeItem('hulks_no_ad_resume_time');
+      sessionStorage.removeItem('yt_resume_time');
     }
   }
 
-  // Main ad monitor loop
   function monitorAds() {
     if (!video) return;
 
     if (isAdPlaying()) {
-      if (SETTINGS.muteDuringAds && !video.muted) video.muted = true;
-      if (SETTINGS.reloadOnAd && video.currentTime === lastTime) {
-        reloadAttempts++;
-        if (reloadAttempts <= MAX_RELOAD_ATTEMPTS) reloadAndResume();
-        else {
-          fallbackBackForward();
+      if (SETTINGS.muteDuringAds && !video.muted) {
+        video.muted = true;
+      }
+      if (SETTINGS.reloadOnAd) {
+        if (video.currentTime === lastTime) {
+          reloadAttempts++;
+          if (reloadAttempts <= MAX_RELOAD_ATTEMPTS) {
+            reloadAndResume();
+          }
+        } else {
           reloadAttempts = 0;
         }
       }
     } else {
-      if (video.muted && SETTINGS.muteDuringAds) video.muted = false;
+      if (video.muted && SETTINGS.muteDuringAds) {
+        video.muted = false;
+      }
       reloadAttempts = 0;
+      skipSponsorSegments();
     }
-
-    skipSponsorSegments();
     lastTime = video.currentTime;
   }
 
-  // Initialization & setup
-  function init() {
-    video = document.querySelector('video');
-    if (!video) {
-      setTimeout(init, 1000);
-      return;
-    }
+  function observeVideoChanges() {
+    const player = document.querySelector('.html5-video-player');
+    if (!player) return;
 
-    // Load SponsorBlock data for current video
-    const videoIdMatch = location.href.match(/v=([^&]+)/);
-    if (videoIdMatch && SETTINGS.sponsorBlock) {
-      fetchSponsorSegments(videoIdMatch[1]).then(segments => {
-        sponsorSegments = segments;
-      }).catch(() => {
+    const observer = new MutationObserver(() => {
+      const newVideo = document.querySelector('video');
+      if (newVideo && newVideo !== video) {
+        video = newVideo;
+        reloadAttempts = 0;
+        lastTime = 0;
         sponsorSegments = [];
-      });
-    }
-
-    createUI();
-
-    // Resume playback after reload if needed
-    video.addEventListener('loadedmetadata', () => {
-      resumePlayback();
+        if (SETTINGS.sponsorBlock) fetchSponsorSegments();
+        resumePlayback();
+      }
     });
 
-    // Ad monitor interval
-    setInterval(monitorAds, 1200);
+    observer.observe(player, { attributes: true, attributeFilter: ['class'] });
   }
 
-  window.addEventListener('yt-navigate-finish', () => {
-    // Reset on page navigation
-    sponsorSegments = [];
-    reloadAttempts = 0;
-    lastTime = 0;
-    video = null;
-    init();
-  });
+  function main() {
+    loadSettings();
+    let playerContainer = document.getElementById('player-container-outer') ||
+                          document.getElementById('player') ||
+                          document.querySelector('.html5-video-player');
+    if (!playerContainer) return;
+    createPanel(playerContainer);
+    observeThemeChanges();
+    video = document.querySelector('video');
+    if (!video) return;
+    if (SETTINGS.sponsorBlock) fetchSponsorSegments();
+    resumePlayback();
+    observeVideoChanges();
+    setInterval(monitorAds, 1000);
+  }
 
-  // Start the script
-  init();
+  function waitForPlayerAndRun() {
+    const check = setInterval(() => {
+      const player = document.querySelector('video');
+      if (player) {
+        clearInterval(check);
+        main();
+      }
+    }, 1000);
+  }
+
+  waitForPlayerAndRun();
 
 })();
