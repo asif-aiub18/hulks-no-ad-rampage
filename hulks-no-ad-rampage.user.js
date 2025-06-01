@@ -270,4 +270,45 @@
     lastTime = video.currentTime;
   }
 
-  //
+  // Initialization & setup
+  function init() {
+    video = document.querySelector('video');
+    if (!video) {
+      setTimeout(init, 1000);
+      return;
+    }
+
+    // Load SponsorBlock data for current video
+    const videoIdMatch = location.href.match(/v=([^&]+)/);
+    if (videoIdMatch && SETTINGS.sponsorBlock) {
+      fetchSponsorSegments(videoIdMatch[1]).then(segments => {
+        sponsorSegments = segments;
+      }).catch(() => {
+        sponsorSegments = [];
+      });
+    }
+
+    createUI();
+
+    // Resume playback after reload if needed
+    video.addEventListener('loadedmetadata', () => {
+      resumePlayback();
+    });
+
+    // Ad monitor interval
+    setInterval(monitorAds, 1200);
+  }
+
+  window.addEventListener('yt-navigate-finish', () => {
+    // Reset on page navigation
+    sponsorSegments = [];
+    reloadAttempts = 0;
+    lastTime = 0;
+    video = null;
+    init();
+  });
+
+  // Start the script
+  init();
+
+})();
